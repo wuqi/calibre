@@ -37,8 +37,27 @@ if islinux and not PKGCONFIG:
     raise SystemExit('Failed to find pkg-config on your system. You can use the environment variable PKG_CONFIG to point to the pkg-config executable')
 
 if iswindows:
-    import win32api
-    cpu_count = win32api.GetSystemInfo()[5]
+    from ctypes import windll, Structure, POINTER, c_size_t
+    from ctypes.wintypes import WORD, DWORD, LPVOID
+    class SYSTEM_INFO(Structure):
+        _fields_ = [
+            ("wProcessorArchitecture",      WORD),
+            ("wReserved",                   WORD),
+            ("dwPageSize",                  DWORD),
+            ("lpMinimumApplicationAddress", LPVOID),
+            ("lpMaximumApplicationAddress", LPVOID),
+            ("dwActiveProcessorMask",       c_size_t),
+            ("dwNumberOfProcessors",        DWORD),
+            ("dwProcessorType",             DWORD),
+            ("dwAllocationGranularity",     DWORD),
+            ("wProcessorLevel",             WORD),
+            ("wProcessorRevision",          WORD)]
+    gsi = windll.kernel32.GetSystemInfo
+    gsi.argtypes = [POINTER(SYSTEM_INFO)]
+    gsi.restype = None
+    si = SYSTEM_INFO()
+    gsi(si)
+    cpu_count = min(16, max(1, si.dwNumberOfProcessors))
 else:
     from multiprocessing import cpu_count
     try:
@@ -94,7 +113,7 @@ pyqt['sip_bin'] = os.environ.get('SIP_BIN', 'sip')
 from PyQt5.QtCore import PYQT_CONFIGURATION
 pyqt['sip_flags'] = PYQT_CONFIGURATION['sip_flags']
 def get_sip_dir():
-    q = os.environ.get('SIP_DIR', sys.prefix if iswindows else os.path.join(sys.prefix, 'share', 'sip'))
+    q = os.environ.get('SIP_DIR', os.path.join(sys.prefix, 'share', 'sip') if iswindows else os.path.join(sys.prefix, 'share', 'sip'))
     for x in ('', 'Py2-PyQt5', 'PyQt5', 'sip/PyQt5'):
         base = os.path.join(q, x)
         if os.path.exists(os.path.join(base, 'QtWidgets')):
@@ -124,24 +143,7 @@ zlib_libs = ['z']
 openssl_inc_dirs, openssl_lib_dirs = [], []
 ICU = sw = ''
 
-QT_DLLS = ['Qt5' + x for x in (
-'Core', 'Gui',  'OpenGL', 'Network', 'PrintSupport', 'Positioning', 'Sensors', 'Sql', 'Svg',
-'WebKit', 'WebKitWidgets', 'Widgets',  'Multimedia', 'MultimediaWidgets', 'Xml',  # 'XmlPatterns',
-)]
-QT_PLUGINS = ('imageformats', 'audio', 'iconengines', 'mediaservice', 'platforms', 'playlistformats', 'printsupport', 'sqldrivers')
-if islinux:
-    # platformthemes cause crashes in Ubuntu
-    QT_PLUGINS += ('platforminputcontexts', 'generic',)
-
-PYQT_MODULES = ('Qt', 'QtCore', 'QtGui', 'QtNetwork',  # 'QtMultimedia', 'QtMultimediaWidgets',
-                'QtPrintSupport', 'QtSensors', 'QtSvg', 'QtWebKit', 'QtWebKitWidgets', 'QtWidgets')
-QT_FRAMEWORKS = []
-
 if iswindows:
-    QT_DLLS += ['Qt5WinExtras']
-    QT_DLLS = {x + '.dll' for x in QT_DLLS}
-    PYQT_MODULES += ('QtWinExtras',)
-    PYQT_MODULES = {x + '.pyd' for x in PYQT_MODULES}
     prefix  = sw = os.environ.get('SW', r'C:\cygwin64\home\kovid\sw')
     sw_inc_dir  = os.path.join(prefix, 'include')
     sw_lib_dir  = os.path.join(prefix, 'lib')
@@ -166,8 +168,6 @@ if iswindows:
     podofo_inc = os.path.join(sw_inc_dir, 'podofo')
     podofo_lib = sw_lib_dir
 elif isosx:
-    QT_DLLS += ['Qt5DBus']
-    QT_FRAMEWORKS = [x.replace('5', '') for x in QT_DLLS]
     sw = os.environ.get('SW', os.path.expanduser('~/sw'))
     podofo_inc = os.path.join(sw, 'include', 'podofo')
     podofo_lib = os.path.join(sw, 'lib')
@@ -182,8 +182,6 @@ elif isosx:
     openssl_inc_dirs = [os.path.join(SSL, 'include')]
     openssl_lib_dirs = [os.path.join(SSL, 'lib')]
 else:
-    QT_DLLS += ['Qt5DBus', 'Qt5XcbQpa']
-    # PYQT_MODULES += ('QtDBus',)
     # Include directories
     png_inc_dirs = pkgconfig_include_dirs('libpng', 'PNG_INC_DIR',
         '/usr/include')
@@ -214,5 +212,3 @@ podofo_error = None if os.path.exists(os.path.join(podofo_inc, 'podofo.h')) else
 
 BUILD_HOST='192.168.81.1'
 PROJECT=os.path.basename(os.path.abspath('.'))
-
-
